@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rotina de Fechamento FCJ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: painel de trabalho — faixa de resumo no topo, abas (Semana · Fechamento · Empresas · Configurar), colunas por dia útil */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#f8f9fb; --ink:#15212d; --muted:#5a6878; --line:#dce2ea;
+  --navy:#123d63; --navy-ink:#ffffff; --navy-soft:#e3ecf5;
+  --ok:#23703f; --ok-bg:#dcf0e2; --warn:#8a5f00; --warn-bg:#fbeecb; --crit:#a3261f; --crit-bg:#fadcd8; --idle-bg:#e9edf2;
+  --sicoob:#0b6b58; --santander:#c0271f; --itau:#d98200;
+  --f-display:"Manrope",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --surface:#17202a; --surface-2:#1c2632; --ink:#e6ecf2; --muted:#9aa8b7; --line:#2a3645;
+  --navy:#4f8fc6; --navy-ink:#0b1219; --navy-soft:#1d3044;
+  --ok:#7fd39b; --ok-bg:#1b3526; --warn:#f0c661; --warn-bg:#3a2f12; --crit:#f29a91; --crit-bg:#3d1e1b; --idle-bg:#243040;
+  --sicoob:#4cc3a6; --santander:#f07a70; --itau:#f3b04a; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --surface:#17202a; --surface-2:#1c2632; --ink:#e6ecf2; --muted:#9aa8b7; --line:#2a3645;
+  --navy:#4f8fc6; --navy-ink:#0b1219; --navy-soft:#1d3044;
+  --ok:#7fd39b; --ok-bg:#1b3526; --warn:#f0c661; --warn-bg:#3a2f12; --crit:#f29a91; --crit-bg:#3d1e1b; --idle-bg:#243040;
+  --sicoob:#4cc3a6; --santander:#f07a70; --itau:#f3b04a; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding-inline:20px;padding-block:20px 48px}
+@media (max-width:520px){.wrap{padding-inline:16px}}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
+
+/* Cabeçalho */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{font-size:26px;font-weight:800;letter-spacing:-.01em}
+.pager{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px}
+.pager button{border:0;background:transparent;width:30px;height:30px;border-radius:50%;font-size:16px;color:var(--muted)}
+.pager button:hover{background:var(--navy-soft);color:var(--ink)}
+.pager .lbl{min-width:150px;text-align:center;font-weight:600;font-family:var(--f-display)}
+.pager .today{width:auto;padding:0 12px;border-radius:999px;font-size:12px;font-weight:600}
+
+/* Resumo */
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+@media (max-width:900px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.stat .k{font-size:12px;color:var(--muted);font-weight:500}
+.stat .v{font-size:24px;font-weight:700;font-family:var(--f-display)}
+.stat .v small{font-size:14px;color:var(--muted);font-weight:600}
+.bar{height:6px;border-radius:99px;background:var(--idle-bg);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:99px;transition:width .3s}
+.stat.hot .v{color:var(--crit)}
+
+/* Abas */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+.tabs button{border:0;background:transparent;padding:10px 14px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--navy)}
+.tabs .count{font-family:var(--f-mono);font-size:11px;background:var(--idle-bg);border-radius:99px;padding:1px 7px;margin-left:6px}
+
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+.toolbar .spacer{flex:1}
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--navy);color:var(--navy-ink)}
+.search{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;min-width:0;width:220px}
+.hint{color:var(--muted);font-size:12.5px}
+
+/* Chips */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.03em;padding:2px 8px;border-radius:99px;white-space:nowrap;background:var(--idle-bg);color:var(--muted)}
+.p-ALTA{background:var(--crit-bg);color:var(--crit)}
+.p-MÉDIA{background:var(--warn-bg);color:var(--warn)}
+.p-NORMAL{background:var(--ok-bg);color:var(--ok)}
+.bank::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-Sicoob{color:var(--sicoob)} .b-Santander{color:var(--santander)} .b-Itau{color:var(--itau)}
+.bank{background:transparent;padding-inline:2px}
+
+/* Semana */
+.week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:start}
+@media (max-width:1100px){.week{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:720px){.week{grid-template-columns:minmax(0,1fr)}}
+.day{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.day.is-today{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy)}
+.day-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:2px 4px 4px}
+.day-h h3{font-size:15px}
+.day-h .d{color:var(--muted);font-size:12px;margin-left:4px;font-family:var(--f-mono)}
+.day-h .tag{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--navy);font-weight:700}
+.day .empty{color:var(--muted);font-size:12.5px;padding:8px 4px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.card.done{background:var(--ok-bg);border-color:transparent}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card-h b{font-family:var(--f-display);font-size:13.5px;letter-spacing:.01em;min-width:0;overflow-wrap:anywhere}
+.card .meta{display:flex;flex-wrap:wrap;gap:6px}
+.checks{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.ck{display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:2px 0}
+.ck input{margin:2px 0 0;accent-color:var(--ok);width:15px;height:15px;flex:none}
+.ck input:checked + span{color:var(--muted);text-decoration:line-through}
+.day-foot{font-size:12px;color:var(--muted);padding:0 4px}
+
+/* Fechamento */
+.group{margin-bottom:22px}
+.group-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.group-h h2{font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+.group-h .num{color:var(--muted);font-size:12px}
+.rows{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(170px,1.2fr) minmax(0,2.6fr) 150px;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row.done{background:color-mix(in srgb,var(--ok-bg) 55%,transparent)}
+.row .who b{font-family:var(--f-display);display:block}
+.row .who span{font-size:12px;color:var(--muted)}
+.row .who .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.row .checks{flex-direction:row;flex-wrap:wrap;gap:4px 16px}
+.row .state{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.status{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:99px}
+.status.ok{background:var(--ok);color:var(--surface)}
+.status.mid{background:var(--warn-bg);color:var(--warn)}
+.status.no{background:var(--idle-bg);color:var(--muted)}
+.linkbtn{border:0;background:transparent;color:var(--navy);font-size:12px;font-weight:600;padding:0}
+.linkbtn:hover{text-decoration:underline}
+@media (max-width:760px){.row{grid-template-columns:minmax(0,1fr)}.row .state{flex-direction:row;align-items:center;justify-content:space-between}}
+
+/* Empresas */
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:1180px}
+.chip.inat{background:var(--crit);color:var(--surface)}
+.card.off{opacity:.72}
+th{background:var(--navy);color:var(--navy-ink);text-align:left;font-size:12px;font-weight:600;padding:9px 10px;white-space:nowrap}
+td{padding:6px 10px;border-top:1px solid var(--line);vertical-align:middle}
+td input[type=text]{width:100%;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 6px}
+td input[type=text]:hover,td input[type=text]:focus{border-color:var(--line);background:var(--surface-2)}
+.sel{appearance:none;border:0;border-radius:99px;padding:4px 26px 4px 10px;font-size:12px;font-weight:600;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 13px) 50%,calc(100% - 9px) 50%;background-size:4px 4px;background-repeat:no-repeat;background-color:var(--idle-bg);color:var(--muted)}
+.v-SIM{background-color:var(--ok-bg);color:var(--ok)}
+.v-NÃO{background-color:var(--crit-bg);color:var(--crit)}
+.v-CONFIRMAR{background-color:var(--warn-bg);color:var(--warn)}
+.v-ALTA{background-color:var(--crit-bg);color:var(--crit)}
+.v-MÉDIA{background-color:var(--warn-bg);color:var(--warn)}
+.v-NORMAL{background-color:var(--ok-bg);color:var(--ok)}
+.v-Sicoob{background-color:var(--sicoob);color:#fff}
+.v-Santander{background-color:var(--santander);color:#fff}
+.v-Itau{background-color:var(--itau);color:#1b1300}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 14px;font-weight:600;font-size:13px}
+.btn:hover{border-color:var(--navy)}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:var(--navy-ink)}
+.btn.danger{color:var(--crit)}
+.btn.danger.armed{background:var(--crit);border-color:var(--crit);color:var(--surface)}
+.x{border:0;background:transparent;color:var(--muted);font-size:16px;width:28px;height:28px;border-radius:6px}
+.x:hover{background:var(--crit-bg);color:var(--crit)}
+.x.armed{background:var(--crit);color:var(--surface);width:auto;padding:0 8px;font-size:12px;font-weight:600}
+
+/* Configurar */
+.cfg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:820px){.cfg{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.panel h2{font-size:16px}
+.panel p{margin:0;color:var(--muted);font-size:13px;max-width:60ch}
+.tasklist{display:flex;flex-direction:column;gap:6px}
+.task-row{display:flex;gap:6px;align-items:center}
+.task-row input{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--surface-2)}
+textarea{width:100%;min-height:110px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface-2);font-family:var(--f-mono);font-size:12px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:99px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">FCJ · Controladoria</div>
+      <h1>Rotina de Fechamento</h1>
+    </div>
+    <div class="pager" aria-label="Mês de referência">
+      <button id="mPrev" aria-label="Mês anterior">‹</button>
+      <span class="lbl" id="mLbl"></span>
+      <button id="mNext" aria-label="Próximo mês">›</button>
+    </div>
+  </header>
+
+  <section class="summary" id="summary"></section>
+
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="semana">Semana</button>
+    <button role="tab" data-tab="mes">Fechamento mensal</button>
+    <button role="tab" data-tab="empresas">Empresas</button>
+    <button role="tab" data-tab="config">Configurar</button>
+  </nav>
+
+  <section id="v-semana" hidden>
+    <div class="toolbar">
+      <div class="pager" aria-label="Semana">
+        <button id="wPrev" aria-label="Semana anterior">‹</button>
+        <span class="lbl num" id="wLbl" style="min-width:170px"></span>
+        <button id="wNext" aria-label="Próxima semana">›</button>
+        <button class="today" id="wToday">Hoje</button>
+      </div>
+      <div class="spacer"></div>
+      <span class="hint" id="wHint"></span>
+    </div>
+    <div class="week" id="week"></div>
+  </section>
+
+  <section id="v-mes" hidden>
+    <div class="toolbar">
+      <div class="seg" id="mFilter">
+        <button data-f="todas">Todas</button>
+        <button data-f="pend">Pendentes</button>
+        <button data-f="ok">Concluídas</button>
+      </div>
+      <input class="search" id="mSearch" type="search" placeholder="Buscar empresa">
+      <div class="spacer"></div>
+      <span class="hint">Concluído = todas as etapas do mês marcadas</span>
+    </div>
+    <div id="month"></div>
+  </section>
+
+  <section id="v-empresas" hidden>
+    <div class="toolbar">
+      <span class="hint">Altere direto na tabela. "Dia" define a coluna da empresa na semana; "Rotina semanal" e "Fechamento mensal" dizem em qual das duas rotinas ela entra.</span>
+      <div class="spacer"></div>
+      <button class="btn primary" id="addCo">+ Nova empresa</button>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Empresa</th><th>Contabilidade</th><th>Cobrança</th><th>Investimento</th><th>Banco</th><th>Prioridade</th><th>Dia</th><th>Rotina semanal</th><th>Fechamento mensal</th><th>Situação</th><th></th></tr></thead>
+      <tbody id="coBody"></tbody>
+    </table></div>
+    <datalist id="contabList"><option value="INUP"><option value="Elementari + INUP"><option value="Elementari + Contabilidade Parada"><option value="Contabilidade Parada"></datalist>
+  </section>
+
+  <section id="v-config" hidden>
+    <div class="cfg">
+      <div class="panel">
+        <h2>Tarefas semanais</h2>
+        <p>Aparecem em cada empresa com rotina semanal ligada, no dia dela. Renomear uma tarefa mantém as marcações; excluir apaga o histórico dela.</p>
+        <div class="tasklist" id="wTasks"></div>
+        <div class="btnrow"><button class="btn" data-add="weekly">+ Adicionar tarefa semanal</button></div>
+      </div>
+      <div class="panel">
+        <h2>Etapas do fechamento mensal</h2>
+        <p>Valem para todas as empresas. Quando todas estão marcadas no mês, a empresa conta como fechada.</p>
+        <div class="tasklist" id="mTasks"></div>
+        <div class="btnrow"><button class="btn" data-add="monthly">+ Adicionar etapa mensal</button></div>
+      </div>
+      <div class="panel">
+        <h2>Cópia de segurança</h2>
+        <p>Os dados ficam salvos neste navegador. Copie o backup de vez em quando e guarde num arquivo de texto; para restaurar, cole o conteúdo aqui e clique em Restaurar.</p>
+        <textarea id="bkText" spellcheck="false" placeholder="Cole aqui um backup para restaurar"></textarea>
+        <div class="btnrow">
+          <button class="btn primary" id="bkCopy">Copiar backup</button>
+          <button class="btn" id="bkLoad">Restaurar backup colado</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Recomeçar</h2>
+        <p>Volta a lista de empresas e tarefas ao estado inicial e apaga todas as marcações.</p>
+        <div class="btnrow"><button class="btn danger" id="resetAll">Apagar tudo e recomeçar</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+const KEY='fcj_rotina_fechamento_v1';
+const DIAS=['seg','ter','qua','qui','sex'];
+const DIA_NOME={seg:'Segunda',ter:'Terça',qua:'Quarta',qui:'Quinta',sex:'Sexta'};
+const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const PRIOS=['ALTA','MÉDIA','NORMAL'];
+const OPT={cob:['SIM','CONFIRMAR','NÃO','CSC SUSPENSO'],inv:['SIM','NÃO',''],banco:['Sicoob','Santander','Itau',''],prio:PRIOS};
+
+// [empresa, contabilidade, cobrança, investimento, banco, prioridade, dia, fechado em set/26, fechamento mensal, inativa, rotina semanal]
+const SEED=[
+ ['INOVA.SAO','INUP','SIM','SIM','Santander','ALTA','seg',1,1,0,1],
+ ['CYBERGATE','INUP','SIM','NÃO','Santander','ALTA','seg',1,1,0,1],
+ ['MUBIUS WOMENTECH','INUP','SIM','SIM','Sicoob','ALTA','seg',0,1,0,1],
+ ['VAREJO','Elementari + INUP','NÃO','NÃO','Sicoob','NORMAL','seg',0,1,0,1],
+ ['NOVOAGRO','Elementari + Contabilidade Parada','NÃO','NÃO','Sicoob','NORMAL','seg',0,1,0,1],
+ ['IARIS','INUP','SIM','SIM','Santander','ALTA','ter',1,1,0,1],
+ ['SENIORTECH','INUP','SIM','SIM','Sicoob','ALTA','ter',1,1,0,1],
+ ['CONNSULT','INUP','SIM','','Itau','MÉDIA','ter',0,1,0,1],
+ ['205','INUP','NÃO','SIM','Sicoob','NORMAL','ter',0,1,0,1],
+ ['FCJ INVEST S.A. (INVESTPLUS)','INUP','SIM','NÃO','Sicoob','MÉDIA','ter',0,1,0,1],
+ ["CEO'S CLUB",'INUP','SIM','SIM','Santander','ALTA','qua',1,1,0,1],
+ ['MINAS SUMMIT','INUP','SIM','NÃO','Santander','MÉDIA','qua',1,1,0,1],
+ ['BOARD','INUP','SIM','SIM','Sicoob','ALTA','qua',1,1,0,1],
+ ['ENERGY HUB','Elementari + INUP','SIM','SIM','Sicoob','MÉDIA','qua',0,1,0,1],
+ ['AMAZONIA','INUP','CSC SUSPENSO','NÃO','Santander','NORMAL','qui',1,1,0,1],
+ ['VERTICAL SAUDE','Contabilidade Parada','NÃO','NÃO','Sicoob','NORMAL','qui',0,1,0,1],
+ ['ALGAR TELECOM','INUP','CONFIRMAR','NÃO','Sicoob','NORMAL','qui',1,1,0,1],
+ ['FCJ','INUP','SIM','NÃO','Sicoob','NORMAL','qui',0,1,0,1],
+ ['RESUMOCAST','Elementari + INUP','CONFIRMAR','SIM','Sicoob','MÉDIA','sex',1,1,0,1],
+ ['FARMA','Elementari + INUP','NÃO','NÃO','Sicoob','NORMAL','sex',0,1,0,1],
+ ['DOME','INUP','SIM','SIM','Sicoob','ALTA','sex',0,1,0,1],
+ ['ADUELA','INUP','CONFIRMAR','NÃO','Sicoob','NORMAL','sex',0,1,0,1],
+ ['ENIAC','INUP','SIM','SIM','Sicoob','ALTA','sex',0,1,0,1],
+ ['H2G TECH','Elementari + INUP','CSC SUSPENSO','NÃO','Sicoob','NORMAL','sex',0,1,0,0],
+ ['TECHSUN','Contabilidade Parada','NÃO','NÃO','Sicoob','NORMAL','sex',0,1,0,0],
+ ['HEALTHANGELS','','NÃO','','','NORMAL','sex',0,0,0,1],
+ ['ANZOL DE OURO','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['VETOR AG','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['ATMOSFERA','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['ACELERASE','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['SYNERGY','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['CAPRI','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['X5','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['FEDERAMINAS','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['STARTUP SCHOOL','','NÃO','','','NORMAL','sex',0,0,1,1],
+ ['WOLI','','NÃO','','','NORMAL','sex',0,0,1,1]
+];
+// semana de 28/09/2026 conforme o Kanban (4/4)
+const SEED_WEEK={week:'2026-09-28',done:['CYBERGATE','MUBIUS WOMENTECH','IARIS','SENIORTECH','CONNSULT','205','FCJ INVEST S.A. (INVESTPLUS)',"CEO'S CLUB",'MINAS SUMMIT','BOARD','RESUMOCAST','ANZOL DE OURO','VETOR AG','ATMOSFERA']};
+const MONTHLY=[['conc','Conciliação bancária'],['ext','Extratos']].map(([id,t])=>({id,t}));
+const WEEKLY=[['baixa','Baixa de recebimentos'],['avencer','Lembrete: a vencer'],['atraso','Lembrete: atrasados'],['report','Atualizar Report Contas a Receber']].map(([id,t])=>({id,t}));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const rowToCo=(r,id)=>({id,nome:r[0],contab:r[1],cob:r[2],inv:r[3],banco:r[4],prio:r[5],dia:r[6],mensal:!!r[8],inativo:!!r[9],semanal:!!r[10]});
+function seedWeek(st){
+  if(st.weekDone[SEED_WEEK.week]&&Object.keys(st.weekDone[SEED_WEEK.week]).length) return;
+  const o={}; st.companies.forEach(c=>{ if(SEED_WEEK.done.includes(c.nome)){ o[c.id]={}; st.weekly.forEach(t=>o[c.id][t.id]=true); }});
+  st.weekDone[SEED_WEEK.week]=o;
+}
+function seedState(){
+  const weekly=WEEKLY.map(t=>({...t})), monthly=MONTHLY.map(t=>({...t}));
+  const companies=SEED.map((r,i)=>rowToCo(r,'c'+i));
+  const monthDone={'2026-09':{}};
+  SEED.forEach((r,i)=>{ if(r[7]){ const o={}; monthly.forEach(t=>o[t.id]=true); monthDone['2026-09']['c'+i]=o; }});
+  const st={v:2,companies,weekly,monthly,weekDone:{},monthDone};
+  seedWeek(st); return st;
+}
+// versão 1 → 2: aplica a divisão do Kanban e as etapas mensais reais, mantendo o que já foi marcado
+function migrate(st){
+  if(st.v>=2) return st;
+  const byName={}; st.companies.forEach(c=>byName[c.nome]=c);
+  SEED.forEach(r=>{
+    const c=byName[r[0]];
+    if(c){ c.dia=r[6]; c.mensal=!!r[8]; c.inativo=!!r[9]; c.semanal=!!r[10]; }
+    else st.companies.push(rowToCo(r,'c'+uid()));
+  });
+  st.companies.forEach(c=>{ if(c.mensal===undefined) c.mensal=true; if(c.inativo===undefined) c.inativo=false; });
+  Object.values(st.monthDone||{}).forEach(m=>Object.values(m).forEach(o=>{
+    const wasClosed=o.conc&&o.lanc&&o.docs&&o.rel; delete o.lanc; delete o.docs; delete o.rel; if(wasClosed) o.ext=true;
+  }));
+  st.monthly=MONTHLY.map(t=>({...t})); st.weekDone=st.weekDone||{}; st.monthDone=st.monthDone||{};
+  seedWeek(st); st.v=2; return st;
+}
+let S;
+try{ S=JSON.parse(localStorage.getItem(KEY)); }catch(e){ S=null; }
+if(!S||!S.companies) S=seedState(); else S=migrate(S);
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+
+// datas
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+function monday(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const w=(x.getDay()+6)%7; x.setDate(x.getDate()-w); return x; }
+const addDays=(d,n)=>{const x=new Date(d); x.setDate(x.getDate()+n); return x;};
+const ddmm=d=>pad(d.getDate())+'/'+pad(d.getMonth()+1);
+const TODAY=new Date();
+
+let ui={tab:'semana',week:monday(TODAY),month:new Date(TODAY.getFullYear(),TODAY.getMonth(),1),filter:'todas',q:''};
+try{ const t=localStorage.getItem(KEY+'_tab'); if(t) ui.tab=t; }catch(e){}
+const mKey=()=>ui.month.getFullYear()+'-'+pad(ui.month.getMonth()+1);
+const wKey=()=>iso(ui.week);
+
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
+const byPrio=(a,b)=>PRIOS.indexOf(a.prio)-PRIOS.indexOf(b.prio)||a.nome.localeCompare(b.nome,'pt');
+
+function wDone(cid,tid){ return !!(S.weekDone[wKey()]&&S.weekDone[wKey()][cid]&&S.weekDone[wKey()][cid][tid]); }
+function mDone(cid,tid){ return !!(S.monthDone[mKey()]&&S.monthDone[mKey()][cid]&&S.monthDone[mKey()][cid][tid]); }
+function setMark(store,key,cid,tid,val){ store[key]=store[key]||{}; store[key][cid]=store[key][cid]||{}; if(val) store[key][cid][tid]=true; else delete store[key][cid][tid]; }
+const mCount=c=>S.monthly.filter(t=>mDone(c.id,t.id)).length;
+const mClosed=c=>S.monthly.length>0&&mCount(c)===S.monthly.length;
+const wCos=()=>S.companies.filter(c=>c.semanal&&!c.inativo);
+const wCount=c=>S.weekly.filter(t=>wDone(c.id,t.id)).length;
+
+const bankChip=c=>c.banco?`<span class="chip bank b-${esc(c.banco)}">${esc(c.banco==='Itau'?'Itaú':c.banco)}</span>`:'';
+function chips(c){
+  if(c.inativo) return '<span class="chip inat">INATIVA</span>';
+  return `<span class="chip p-${esc(c.prio)}">${esc(c.prio)}</span>${bankChip(c)}`;
+}
+const mCos=()=>S.companies.filter(c=>c.mensal&&!c.inativo);
+
+function renderSummary(){
+  const mc=mCos(), total=mc.length, closed=mc.filter(mClosed).length;
+  const wc=wCos(), wt=wc.length*S.weekly.length, wd=wc.reduce((a,c)=>a+wCount(c),0);
+  const altas=mc.filter(c=>c.prio==='ALTA'&&!mClosed(c)).length;
+  const isThisWeek=wKey()===iso(monday(TODAY));
+  const dIdx=(TODAY.getDay()+6)%7, dKey=DIAS[dIdx];
+  let todayHtml;
+  if(dIdx<5){
+    const tc=wc.filter(c=>c.dia===dKey); const pend=tc.reduce((a,c)=>a+(S.weekly.length-(isThisWeek?wCount(c):0)),0);
+    todayHtml=`<div class="k">Hoje · ${DIA_NOME[dKey]}</div><div class="v num">${isThisWeek?pend:'–'} <small>${isThisWeek?'tarefas pendentes':'outra semana aberta'}</small></div><div class="k">${tc.length} empresas no dia</div>`;
+  } else todayHtml=`<div class="k">Hoje</div><div class="v">Fim de semana</div>`;
+  $('summary').innerHTML=`
+   <div class="stat"><div class="k">Fechamento de ${MESES[ui.month.getMonth()].toLowerCase()}</div><div class="v num">${closed}<small>/${total}</small></div><div class="bar"><i style="width:${total?closed/total*100:0}%"></i></div></div>
+   <div class="stat"><div class="k">Tarefas da semana ${ddmm(ui.week)}</div><div class="v num">${wd}<small>/${wt}</small></div><div class="bar"><i style="width:${wt?wd/wt*100:0}%"></i></div></div>
+   <div class="stat">${todayHtml}</div>
+   <div class="stat ${altas?'hot':''}"><div class="k">Prioridade ALTA sem fechar</div><div class="v num">${altas}</div><div class="k">${altas?'no mês selecionado':'tudo em dia'}</div></div>`;
+  $('mLbl').textContent=MESES[ui.month.getMonth()]+' '+ui.month.getFullYear();
+  document.querySelector('[data-tab="mes"]').innerHTML=`Fechamento mensal<span class="count">${closed}/${total}</span>`;
+  document.querySelector('[data-tab="semana"]').innerHTML=`Semana<span class="count">${wd}/${wt}</span>`;
+}
+
+function renderWeek(){
+  $('wLbl').textContent=ddmm(ui.week)+' a '+ddmm(addDays(ui.week,4))+'/'+addDays(ui.week,4).getFullYear();
+  const inat=S.companies.filter(c=>c.inativo).length;
+  $('wHint').textContent=inat?`${inat} empresas inativas ocultas (reative em Empresas)`:'';
+  const todayIso=iso(TODAY);
+  $('week').innerHTML=DIAS.map((d,i)=>{
+    const date=addDays(ui.week,i), cos=wCos().filter(c=>c.dia===d).sort((a,b)=>(a.inativo-b.inativo)||byPrio(a,b));
+    const tot=cos.length*S.weekly.length, dn=cos.reduce((a,c)=>a+wCount(c),0);
+    const cards=cos.map(c=>{
+      const all=S.weekly.length&&wCount(c)===S.weekly.length;
+      return `<article class="card ${all?'done':''} ${c.inativo&&!all?'off':''}">
+        <div class="card-h"><b>${esc(c.nome)}</b>${all?'<span class="status ok">Feito</span>':''}</div>
+        <div class="meta">${chips(c)}${!c.inativo&&c.cob!=='SIM'?`<span class="chip">Cobrança: ${esc(c.cob)}</span>`:''}</div>
+        <ul class="checks">${S.weekly.map(t=>`<li><label class="ck"><input type="checkbox" data-k="w" data-c="${c.id}" data-t="${t.id}" ${wDone(c.id,t.id)?'checked':''}><span>${esc(t.t)}</span></label></li>`).join('')}</ul>
+      </article>`;}).join('');
+    return `<div class="day ${iso(date)===todayIso?'is-today':''}">
+      <div class="day-h"><h3>${DIA_NOME[d]}<span class="d">${ddmm(date)}</span></h3>${iso(date)===todayIso?'<span class="tag">Hoje</span>':`<span class="num hint">${dn}/${tot}</span>`}</div>
+      ${cards||'<div class="empty">Nenhuma empresa neste dia.</div>'}
+      ${iso(date)===todayIso&&tot?`<div class="day-foot num">${dn}/${tot} feitas</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderMonth(){
+  document.querySelectorAll('#mFilter button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.f===ui.filter));
+  const q=ui.q.trim().toLowerCase();
+  let cos=mCos().filter(c=>!q||c.nome.toLowerCase().includes(q));
+  if(ui.filter==='pend') cos=cos.filter(c=>!mClosed(c));
+  if(ui.filter==='ok') cos=cos.filter(mClosed);
+  const html=PRIOS.map(p=>{
+    const g=cos.filter(c=>c.prio===p).sort(byPrio); if(!g.length) return '';
+    const done=g.filter(mClosed).length;
+    return `<div class="group"><div class="group-h"><span class="chip p-${p}">${p}</span><h2>Prioridade ${p.toLowerCase()}</h2><span class="num">${done}/${g.length} fechadas</span></div>
+    <div class="rows">${g.map(c=>{
+      const n=mCount(c), all=mClosed(c);
+      const st=all?'<span class="status ok">Concluído</span>':n?`<span class="status mid">${n}/${S.monthly.length} etapas</span>`:'<span class="status no">Não iniciado</span>';
+      return `<div class="row ${all?'done':''}">
+        <div class="who"><b>${esc(c.nome)}</b><span>${esc(c.contab)}</span><div class="meta">${bankChip(c)}<span class="chip">Cobrança ${esc(c.cob)}</span><span class="chip">Invest. ${esc(c.inv||'—')}</span></div></div>
+        <ul class="checks">${S.monthly.map(t=>`<li><label class="ck"><input type="checkbox" data-k="m" data-c="${c.id}" data-t="${t.id}" ${mDone(c.id,t.id)?'checked':''}><span>${esc(t.t)}</span></label></li>`).join('')}</ul>
+        <div class="state">${st}<button class="linkbtn" data-all="${c.id}">${all?'Desmarcar tudo':'Marcar tudo'}</button></div>
+      </div>`;}).join('')}</div></div>`;
+  }).join('');
+  $('month').innerHTML=html||'<p class="hint">Nenhuma empresa nesse filtro.</p>';
+}
+
+function sel(field,c,opts,labels){
+  return `<select class="sel v-${esc(c[field]).replace(/\s/g,'_')}" data-f="${field}" data-c="${c.id}" aria-label="${field}">${opts.map((o,i)=>`<option value="${esc(o)}" ${c[field]===o?'selected':''}>${esc(labels?labels[i]:(o||'—'))}</option>`).join('')}</select>`;
+}
+function renderCompanies(){
+  $('coBody').innerHTML=S.companies.map(c=>`<tr>
+    <td style="min-width:200px"><input type="text" data-f="nome" data-c="${c.id}" value="${esc(c.nome)}" aria-label="Empresa"></td>
+    <td style="min-width:210px"><input type="text" list="contabList" data-f="contab" data-c="${c.id}" value="${esc(c.contab)}" aria-label="Contabilidade"></td>
+    <td>${sel('cob',c,OPT.cob)}</td><td>${sel('inv',c,OPT.inv)}</td>
+    <td>${sel('banco',c,OPT.banco,['Sicoob','Santander','Itaú','—'])}</td><td>${sel('prio',c,OPT.prio)}</td>
+    <td>${sel('dia',c,DIAS,DIAS.map(d=>DIA_NOME[d]))}</td>
+    <td>${sel('semanal',{id:c.id,semanal:c.semanal?'1':'0'},['1','0'],['Sim','Não']).replace('v-1','v-SIM').replace('v-0','v-NÃO')}</td>
+    <td>${sel('mensal',{id:c.id,mensal:c.mensal?'1':'0'},['1','0'],['Sim','Não']).replace('v-1','v-SIM').replace('v-0','v-NÃO')}</td>
+    <td>${sel('inativo',{id:c.id,inativo:c.inativo?'1':'0'},['0','1'],['Ativa','Inativa']).replace('v-0','v-SIM').replace('v-1','v-NÃO')}</td>
+    <td><button class="x" data-del="${c.id}" aria-label="Remover ${esc(c.nome)}">×</button></td>
+  </tr>`).join('');
+}
+
+function renderConfig(){
+  const row=(kind,t)=>`<div class="task-row"><input type="text" data-tk="${kind}" data-t="${t.id}" value="${esc(t.t)}" aria-label="Nome da tarefa"><button class="x" data-tdel="${kind}" data-t="${t.id}" aria-label="Excluir tarefa">×</button></div>`;
+  $('wTasks').innerHTML=S.weekly.map(t=>row('weekly',t)).join('')||'<p>Nenhuma tarefa.</p>';
+  $('mTasks').innerHTML=S.monthly.map(t=>row('monthly',t)).join('')||'<p>Nenhuma etapa.</p>';
+}
+
+function render(){
+  document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===ui.tab));
+  ['semana','mes','empresas','config'].forEach(t=>$('v-'+t).hidden=t!==ui.tab);
+  renderSummary();
+  if(ui.tab==='semana') renderWeek();
+  if(ui.tab==='mes') renderMonth();
+  if(ui.tab==='empresas') renderCompanies();
+  if(ui.tab==='config') renderConfig();
+}
+let tt; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),1800); }
+
+// botões de confirmação em dois cliques
+function armed(btn,label){ if(btn.classList.contains('armed')) return true; btn.classList.add('armed'); const old=btn.textContent; btn.textContent=label; setTimeout(()=>{btn.classList.remove('armed'); btn.textContent=old;},3000); return false; }
+
+document.addEventListener('change',e=>{
+  const el=e.target, d=el.dataset;
+  if(d.k==='w'){ setMark(S.weekDone,wKey(),d.c,d.t,el.checked); save(); renderSummary(); renderWeek(); return; }
+  if(d.k==='m'){ setMark(S.monthDone,mKey(),d.c,d.t,el.checked); save(); renderSummary(); renderMonth(); return; }
+  if(d.f&&d.c){ const c=S.companies.find(x=>x.id===d.c); if(!c) return;
+    c[d.f]= (d.f==='semanal'||d.f==='mensal'||d.f==='inativo') ? el.value==='1' : (d.f==='nome'?el.value.trim().toUpperCase():el.value);
+    save(); renderSummary(); renderCompanies(); return; }
+  if(d.tk){ const t=S[d.tk].find(x=>x.id===d.t); if(t){ t.t=el.value.trim()||t.t; save(); render(); toast('Tarefa renomeada'); } }
+});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return; const d=b.dataset;
+  if(d.tab){ ui.tab=d.tab; try{localStorage.setItem(KEY+'_tab',ui.tab);}catch(_){} render(); return; }
+  if(d.f&&b.closest('#mFilter')){ ui.filter=d.f; renderMonth(); return; }
+  if(d.all){ const c=S.companies.find(x=>x.id===d.all); const val=!mClosed(c); S.monthly.forEach(t=>setMark(S.monthDone,mKey(),c.id,t.id,val)); save(); renderSummary(); renderMonth(); return; }
+  if(d.del){ if(!armed(b,'Remover?')) return; S.companies=S.companies.filter(c=>c.id!==d.del); save(); render(); toast('Empresa removida'); return; }
+  if(d.tdel){ if(!armed(b,'Excluir?')) return; S[d.tdel]=S[d.tdel].filter(t=>t.id!==d.t); save(); render(); return; }
+  if(d.add){ S[d.add].push({id:uid(),t:d.add==='weekly'?'Nova tarefa semanal':'Nova etapa mensal'}); save(); render(); const ins=document.querySelectorAll(`[data-tk="${d.add}"]`); const last=ins[ins.length-1]; if(last){last.focus(); last.select();} return; }
+});
+$('mPrev').onclick=()=>{ ui.month=new Date(ui.month.getFullYear(),ui.month.getMonth()-1,1); render(); };
+$('mNext').onclick=()=>{ ui.month=new Date(ui.month.getFullYear(),ui.month.getMonth()+1,1); render(); };
+$('wPrev').onclick=()=>{ ui.week=addDays(ui.week,-7); render(); };
+$('wNext').onclick=()=>{ ui.week=addDays(ui.week,7); render(); };
+$('wToday').onclick=()=>{ ui.week=monday(TODAY); ui.month=new Date(TODAY.getFullYear(),TODAY.getMonth(),1); render(); };
+$('mSearch').addEventListener('input',e=>{ ui.q=e.target.value; renderMonth(); });
+$('addCo').onclick=()=>{ S.companies.push({id:'c'+uid(),nome:'NOVA EMPRESA',contab:'INUP',cob:'SIM',inv:'NÃO',banco:'Sicoob',prio:'NORMAL',dia:'sex',semanal:true,mensal:true,inativo:false}); save(); render(); const ins=document.querySelectorAll('#coBody input[data-f="nome"]'); const l=ins[ins.length-1]; if(l){l.focus(); l.select();} };
+$('bkCopy').onclick=()=>{ const txt=JSON.stringify(S); $('bkText').value=txt;
+  try{ navigator.clipboard.writeText(txt).then(()=>toast('Backup copiado'),()=>{ $('bkText').select(); toast('Selecionado: use Ctrl+C'); }); }catch(_){ $('bkText').select(); toast('Selecionado: use Ctrl+C'); } };
+$('bkLoad').onclick=()=>{ try{ const o=JSON.parse($('bkText').value); if(!o.companies||!o.weekly||!o.monthly) throw 0; S=o; S.weekDone=S.weekDone||{}; S.monthDone=S.monthDone||{}; save(); render(); toast('Backup restaurado'); }catch(_){ toast('Esse texto não é um backup válido deste painel'); } };
+$('resetAll').onclick=e=>{ if(!armed(e.currentTarget,'Clique de novo para apagar')) return; S=seedState(); save(); render(); toast('Painel reiniciado'); };
+
+render();
+})();
+</script>
+</body>
+</html>
